@@ -8,10 +8,9 @@ from typing import Any, Iterable
 from urllib.parse import urljoin
 
 import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
-from idx_scraper.config import DEFAULT_HEADERS, ENDPOINTS, FILE_HOST
+from idx_scraper.config import ENDPOINTS, FILE_HOST
+from idx_scraper.session import create_session
 
 logger = logging.getLogger(__name__)
 
@@ -30,21 +29,6 @@ class ReportFile:
     @property
     def download_url(self) -> str:
         return urljoin(FILE_HOST, self.file_path.lstrip("/"))
-
-
-def _build_session() -> requests.Session:
-    session = requests.Session()
-    session.headers.update(DEFAULT_HEADERS)
-    retry = Retry(
-        total=4,
-        backoff_factor=1.5,
-        status_forcelist=(429, 500, 502, 503, 504),
-        allowed_methods=("GET",),
-    )
-    adapter = HTTPAdapter(max_retries=retry)
-    session.mount("https://", adapter)
-    session.mount("http://", adapter)
-    return session
 
 
 def _extract_attachments(payload: Any) -> Iterable[dict]:
@@ -73,7 +57,7 @@ class IDXClient:
     """Fetches the list of financial-report PDF attachments for a ticker."""
 
     def __init__(self, session: requests.Session | None = None, timeout: float = 20.0):
-        self.session = session or _build_session()
+        self.session = session or create_session()
         self.timeout = timeout
 
     def fetch_report_files(
