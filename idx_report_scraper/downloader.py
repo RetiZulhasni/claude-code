@@ -1,0 +1,211 @@
+"""Core automation for pulling financial-report PDFs from idx.co.id.
+
+Pipeline, one step per function so each stage can be tested and retried
+independently:
+
+    fetch_report()            -> raw JSON from the IDX financial-report API
+    extract_pdf_attachments() -> just the PDF entries from that JSON
+    download_pdf()            -> one attachment saved to disk, with retries
+    run()                     -> orchestrates the above across periods and
+                                  writes a manifest.json describing the result
+
+Endpoint and JSON field names (Results[].Attachments[].File_Name /
+File_Path) were confirmed against a public IDX scraper implementation, not
+guessed from documentation, since idx.co.id does not publish an API
+reference. If IDX changes the response shape, fetch_report() will surface
+the raw payload so the mismatch is easy to diagnose.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+import time
+from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Iterable, Iterator
+
+import requests
+
+logger = logging.getLogger("idx_report_scraper")
+
+BASE_URL = "https://idx.co.id/umbraco/Surface/ListedCompany/GetFinancialReport"
+VALID_PERIODS = ("tw1", "tw2", "tw3", "tahunan")
+DEFAULT_PERIODS = VALID_PERIODS
+
+# idx.co.id rejects requests that look scripted (no browser UA/Referer) with
+# a 403, so a normal browser identity is used here.
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Referer": "https://idx.co.id/id/perusahaan-tercatat/laporan-keuangan-dan-tahunan",
+    "Accept": "application/json, text/plain, */*",
+}
+
+REQUEST_TIMEOUT = 30
+MAX_ATTEMPTS = 4
+BACKOFF_SECONDS = 2
+
+
+@dataclass
+class DownloadResult:
+    kode_emiten: str
+    year: int
+    periode: str
+    file_name: str
+    source_url: str
+    local_path: str
+    sha256: str
+    size_bytes: int
+    downloaded_at: str
+
+
+def _request_with_retry(session: requests.Session, method: str, url: str, **kwargs) -> requests.Response:
+    last_error: Exception | None = None
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            response = session.request(method, url, timeout=REQUEST_TIMEOUT, **kwargs)
+            response.raise_for_status()
+            return response
+        except requests.RequestException as exc:
+            last_error = exc
+            if attempt == MAX_ATTEMPTS:
+                break
+            wait = BACKOFF_SECONDS * (2 ** (attempt - 1))
+            logger.warning(
+                "Request ke %s gagal (percobaan %d/%d): %s. Mencoba lagi dalam %ds.",
+                url,
+                attempt,
+                MAX_ATTEMPTS,
+                exc,
+                wait,
+            )
+            time.sleep(wait)
+    assert last_error is not None
+    raise last_error
+
+
+def fetch_report(
+    kode_emiten: str,
+    year: int,
+    periode: str,
+    session: requests.Session,
+    report_type: str = "rdf",
+    page_size: int = 10,
+) -> dict:
+    """Call the IDX financial-report API for one issuer/year/period."""
+    if periode not in VALID_PERIODS:
+        raise ValueError(f"periode harus salah satu dari {VALID_PERIODS}, dapat '{periode}'")
+
+    params = {
+        "indexFrom": 0,
+        "pageSize": page_size,
+        "year": year,
+        "reportType": report_type,
+        "periode": periode,
+        "kodeEmiten": kode_emiten,
+    }
+    response = _request_with_retry(session, "GET", BASE_URL, params=params, headers=HEADERS)
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise RuntimeError(
+            f"Respons IDX untuk {kode_emiten} {year}/{periode} bukan JSON valid: {exc}\n"
+            f"Cuplikan respons: {response.text[:500]!r}"
+        ) from exc
+
+
+def extract_pdf_attachments(data: dict) -> Iterator[dict]:
+    """Yield only the PDF attachments out of a fetch_report() payload."""
+    for result in data.get("Results", []) or []:
+        for attachment in result.get("Attachments", []) or []:
+            file_name = attachment.get("File_Name", "") or ""
+            file_path = attachment.get("File_Path", "") or ""
+            if file_name.lower().endswith(".pdf") or file_path.lower().endswith(".pdf"):
+                yield attachment
+
+
+def download_pdf(
+    attachment: dict,
+    dest_dir: Path,
+    session: requests.Session,
+    kode_emiten: str,
+    year: int,
+    periode: str,
+) -> DownloadResult:
+    url = attachment["File_Path"]
+    file_name = attachment.get("File_Name") or url.rsplit("/", 1)[-1]
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest_path = dest_dir / file_name
+
+    response = _request_with_retry(session, "GET", url, headers=HEADERS, stream=True)
+    sha256 = hashlib.sha256()
+    size = 0
+    with open(dest_path, "wb") as f:
+        for chunk in response.iter_content(chunk_size=1 << 16):
+            if not chunk:
+                continue
+            f.write(chunk)
+            sha256.update(chunk)
+            size += len(chunk)
+
+    return DownloadResult(
+        kode_emiten=kode_emiten,
+        year=year,
+        periode=periode,
+        file_name=file_name,
+        source_url=url,
+        local_path=str(dest_path),
+        sha256=sha256.hexdigest(),
+        size_bytes=size,
+        downloaded_at=datetime.now(timezone.utc).isoformat(),
+    )
+
+
+def run(
+    kode_emiten: str,
+    year: int,
+    periods: Iterable[str] = DEFAULT_PERIODS,
+    out_dir: Path = Path("downloads"),
+    session: requests.Session | None = None,
+) -> list[DownloadResult]:
+    """Fetch + download every PDF financial report for kode_emiten/year.
+
+    Periods with no published report yet (e.g. a quarter that hasn't closed)
+    are logged and skipped rather than treated as errors, since that is the
+    expected state for the current fiscal year.
+    """
+    owns_session = session is None
+    session = session or requests.Session()
+    results: list[DownloadResult] = []
+
+    try:
+        for periode in periods:
+            logger.info("Mengambil laporan %s tahun %s periode %s ...", kode_emiten, year, periode)
+            data = fetch_report(kode_emiten, year, periode, session)
+            attachments = list(extract_pdf_attachments(data))
+
+            if not attachments:
+                logger.info("Tidak ada PDF untuk periode %s (belum terbit atau tidak tersedia).", periode)
+                continue
+
+            dest_dir = out_dir / kode_emiten / str(year) / periode
+            for attachment in attachments:
+                logger.info("Mengunduh %s", attachment.get("File_Name"))
+                result = download_pdf(attachment, dest_dir, session, kode_emiten, year, periode)
+                results.append(result)
+    finally:
+        if owns_session:
+            session.close()
+
+    manifest_path = out_dir / kode_emiten / str(year) / "manifest.json"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump([asdict(r) for r in results], f, indent=2, ensure_ascii=False)
+    logger.info("Manifest ditulis ke %s (%d file)", manifest_path, len(results))
+
+    return results
