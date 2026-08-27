@@ -354,7 +354,7 @@ def run(
                 logger.info("Tidak ada PDF untuk periode %s (belum terbit atau tidak tersedia).", periode)
                 continue
 
-            dest_dir = out_dir / kode_emiten / str(year) / periode
+            dest_dir = out_dir / str(year) / kode_emiten / periode
             for attachment in attachments:
                 logger.info("Mengunduh %s", attachment.get("File_Name"))
                 try:
@@ -371,7 +371,7 @@ def run(
         if owns_session:
             session.close()
 
-    manifest_path = out_dir / kode_emiten / str(year) / "manifest.json"
+    manifest_path = out_dir / str(year) / kode_emiten / "manifest.json"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump([asdict(r) for r in results], f, indent=2, ensure_ascii=False)

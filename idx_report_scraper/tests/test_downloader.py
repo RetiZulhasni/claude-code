@@ -300,7 +300,7 @@ class RunOrchestrationTests(unittest.TestCase):
             self.assertEqual(results[0].source_url, expected_url)
             self.assertNotIn(" ", results[0].source_url)
 
-            manifest_path = out_dir / "AADI" / "2026" / "manifest.json"
+            manifest_path = out_dir / "2026" / "AADI" / "manifest.json"
             self.assertTrue(manifest_path.exists())
             manifest = json.loads(manifest_path.read_text())
             self.assertEqual(len(manifest), 1)

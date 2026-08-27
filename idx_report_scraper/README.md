@@ -25,14 +25,14 @@ via API internal yang dipakai halaman tersebut — bukan parsing HTML.
    dari level induknya sebagai `_entity_name`/`_entity_code`.
 3. `download_pdf()` — mengunduh tiap PDF dengan retry + exponential backoff,
    menghitung SHA-256, menyimpan ke
-   `downloads/<KODE_EMITEN>/<TAHUN>/<PERIODE>/<nama_file>.pdf`.
+   `downloads/<TAHUN>/<KODE_EMITEN>/<PERIODE>/<nama_file>.pdf`.
 4. `metadata.extract_entity_metadata()` — fallback kalau API tidak
    menyertakan `NamaEmiten`/`KodeEmiten` (mis. lewat jalur tebakan URL):
    membaca file PDF lokal yang sudah tersimpan (tanpa request ulang) dan
    mengambil "Nama Entitas"/"Kode Entitas" dari halaman sampul laporan —
    dicoba dulu sebagai tabel, baru fallback ke pencarian teks.
 5. `run()` — menjalankan langkah 1-4 untuk semua periode yang diminta, lalu
-   menulis `downloads/<KODE_EMITEN>/<TAHUN>/manifest.json` berisi daftar file
+   menulis `downloads/<TAHUN>/<KODE_EMITEN>/manifest.json` berisi daftar file
    yang berhasil diunduh (nama, URL sumber, path lokal, hash, ukuran, waktu
    unduh, nama & kode entitas) untuk audit/tracking.
 
