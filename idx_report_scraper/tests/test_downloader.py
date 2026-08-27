@@ -8,7 +8,7 @@ import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from idx_report_scraper import companies, downloader
 
@@ -80,7 +80,11 @@ class RunOrchestrationTests(unittest.TestCase):
 
         session.request.side_effect = fake_request
 
-        with TemporaryDirectory() as tmp:
+        with TemporaryDirectory() as tmp, patch.object(
+            downloader.metadata,
+            "extract_entity_metadata",
+            return_value=("PT Adaro Andalan Indonesia Tbk", "AADI"),
+        ):
             out_dir = Path(tmp)
             results = downloader.run(
                 kode_emiten="AADI",
@@ -93,12 +97,15 @@ class RunOrchestrationTests(unittest.TestCase):
             self.assertEqual(len(results), 1)
             self.assertEqual(results[0].periode, "tw2")
             self.assertTrue(Path(results[0].local_path).exists())
+            self.assertEqual(results[0].entity_name, "PT Adaro Andalan Indonesia Tbk")
+            self.assertEqual(results[0].entity_code, "AADI")
 
             manifest_path = out_dir / "AADI" / "2026" / "manifest.json"
             self.assertTrue(manifest_path.exists())
             manifest = json.loads(manifest_path.read_text())
             self.assertEqual(len(manifest), 1)
             self.assertEqual(manifest[0]["file_name"], "AADI - Laporan Keuangan TW2 2026.pdf")
+            self.assertEqual(manifest[0]["entity_code"], "AADI")
 
 
 if __name__ == "__main__":

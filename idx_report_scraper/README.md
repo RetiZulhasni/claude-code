@@ -17,10 +17,15 @@ via API internal yang dipakai halaman tersebut — bukan parsing HTML.
 3. `download_pdf()` — mengunduh tiap PDF dengan retry + exponential backoff,
    menghitung SHA-256, menyimpan ke
    `downloads/<KODE_EMITEN>/<TAHUN>/<PERIODE>/<nama_file>.pdf`.
-4. `run()` — menjalankan langkah 1-3 untuk semua periode yang diminta, lalu
+4. `metadata.extract_entity_metadata()` — begitu satu PDF selesai diunduh,
+   modul ini membaca file lokal yang sudah tersimpan (tanpa request ulang)
+   dan mengambil "Nama Entitas"/"Kode Entitas" dari halaman sampul laporan
+   — dicoba dulu sebagai tabel, baru fallback ke pencarian teks untuk
+   template PDF yang tidak menyajikannya sebagai tabel.
+5. `run()` — menjalankan langkah 1-4 untuk semua periode yang diminta, lalu
    menulis `downloads/<KODE_EMITEN>/<TAHUN>/manifest.json` berisi daftar file
    yang berhasil diunduh (nama, URL sumber, path lokal, hash, ukuran, waktu
-   unduh) untuk audit/tracking.
+   unduh, nama & kode entitas) untuk audit/tracking.
 
 Periode yang belum terbit (mis. TW3 tahun berjalan, atau laporan tahunan
 sebelum tahun buku ditutup) otomatis dilewati dan dicatat di log, bukan
@@ -73,9 +78,10 @@ tanpa mengubah kode.
 ## Testing
 
 ```bash
-python -m unittest idx_report_scraper.tests.test_downloader -v
+python -m unittest discover -s idx_report_scraper/tests -p "test_*.py" -v
 ```
 
-Test ini berjalan sepenuhnya offline (API di-mock) dan memverifikasi:
-resolusi nama perusahaan ke kode ticker, filter lampiran PDF, serta alur
-unduh + penulisan manifest.
+Test ini berjalan sepenuhnya offline (API dan parsing PDF di-mock) dan
+memverifikasi: resolusi nama perusahaan ke kode ticker, filter lampiran PDF,
+alur unduh + penulisan manifest, serta ekstraksi nama/kode entitas dari
+halaman sampul laporan (baik lewat tabel maupun fallback teks).

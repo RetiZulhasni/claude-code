@@ -29,6 +29,8 @@ from typing import Iterable, Iterator
 
 import requests
 
+from . import metadata
+
 logger = logging.getLogger("idx_report_scraper")
 
 BASE_URL = "https://idx.co.id/umbraco/Surface/ListedCompany/GetFinancialReport"
@@ -62,6 +64,8 @@ class DownloadResult:
     sha256: str
     size_bytes: int
     downloaded_at: str
+    entity_name: str | None = None
+    entity_code: str | None = None
 
 
 def _request_with_retry(session: requests.Session, method: str, url: str, **kwargs) -> requests.Response:
@@ -153,6 +157,14 @@ def download_pdf(
             sha256.update(chunk)
             size += len(chunk)
 
+    entity_name = entity_code = None
+    try:
+        entity_name, entity_code = metadata.extract_entity_metadata(dest_path)
+    except Exception as exc:
+        # PDF templates vary across reports/years; a cover page that
+        # doesn't parse shouldn't fail the download itself.
+        logger.warning("Gagal mengekstrak metadata entitas dari %s: %s", dest_path, exc)
+
     return DownloadResult(
         kode_emiten=kode_emiten,
         year=year,
@@ -163,6 +175,8 @@ def download_pdf(
         sha256=sha256.hexdigest(),
         size_bytes=size,
         downloaded_at=datetime.now(timezone.utc).isoformat(),
+        entity_name=entity_name,
+        entity_code=entity_code,
     )
 
 
