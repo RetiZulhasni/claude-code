@@ -7,7 +7,7 @@ import logging
 import sys
 from pathlib import Path
 
-import requests
+from curl_cffi import requests
 
 from . import companies, downloader
 
@@ -65,7 +65,7 @@ def main(argv: list[str] | None = None) -> int:
             periods=args.periode,
             out_dir=args.out_dir,
         )
-    except requests.RequestException as exc:
+    except requests.exceptions.RequestException as exc:
         log.error("Gagal menghubungi idx.co.id: %s", exc)
         return 3
 

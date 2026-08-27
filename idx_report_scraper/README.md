@@ -62,9 +62,16 @@ tanpa mengubah kode.
 
 ## Catatan penting
 
-- **idx.co.id memblokir request tanpa identitas browser** — client di sini
-  sudah mengirim `User-Agent`/`Referer` yang wajar, tapi situs bisa saja
-  menambah proteksi (captcha, rate limit) sewaktu-waktu.
+- **idx.co.id ada di belakang Cloudflare**, yang menolak request dari
+  library `requests` biasa (403 "Attention Required") berdasarkan
+  fingerprint TLS-nya — bukan cuma dari header `User-Agent`/`Referer`.
+  Karena itu client di sini pakai
+  [`curl_cffi`](https://github.com/lexiforest/curl_cffi) dengan
+  `impersonate="chrome"`, yang meniru fingerprint TLS Chrome asli;
+  API-nya sengaja dibuat mirip `requests` (`Session`, `.json()`,
+  `.iter_content()`) supaya kode pipeline-nya tidak berubah banyak. Situs
+  tetap bisa saja menambah proteksi lain (captcha, rate limit, Bot Fight
+  Mode yang lebih ketat) sewaktu-waktu.
 - **Sandbox pengembangan ini tidak punya akses keluar ke idx.co.id**
   (diblokir oleh egress proxy lingkungan), sehingga scraper ini divalidasi
   dengan unit test offline (`tests/test_downloader.py`, mem-mock response

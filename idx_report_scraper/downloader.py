@@ -14,6 +14,15 @@ File_Path) were confirmed against a public IDX scraper implementation, not
 guessed from documentation, since idx.co.id does not publish an API
 reference. If IDX changes the response shape, fetch_report() will surface
 the raw payload so the mismatch is easy to diagnose.
+
+idx.co.id sits behind Cloudflare, which rejects plain `requests` calls
+outright (a 403 "Attention Required" page) based on the TLS handshake
+fingerprint, regardless of what User-Agent/Referer headers are sent -
+Python's stock TLS stack doesn't match a real Chrome fingerprint. curl_cffi
+is used instead of `requests` because it reproduces a real browser's TLS
+fingerprint (JA3), not just its headers; its Session/Response API is
+otherwise a drop-in match for `requests` (same method names, .json(),
+.iter_content(), .raise_for_status()).
 """
 
 from __future__ import annotations
@@ -27,7 +36,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Iterator
 
-import requests
+from curl_cffi import requests
 
 from . import metadata
 
@@ -37,13 +46,11 @@ BASE_URL = "https://idx.co.id/umbraco/Surface/ListedCompany/GetFinancialReport"
 VALID_PERIODS = ("tw1", "tw2", "tw3", "tahunan")
 DEFAULT_PERIODS = VALID_PERIODS
 
-# idx.co.id rejects requests that look scripted (no browser UA/Referer) with
-# a 403, so a normal browser identity is used here.
+# impersonate="chrome" (set on the Session) already supplies a matching
+# User-Agent/sec-ch-ua for the TLS fingerprint being replicated - only the
+# headers a real browser adds on top of that for this specific AJAX call
+# need to be listed here.
 HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    ),
     "Referer": "https://idx.co.id/id/perusahaan-tercatat/laporan-keuangan-dan-tahunan",
     "Accept": "application/json, text/plain, */*",
     "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
@@ -77,7 +84,7 @@ def _request_with_retry(session: requests.Session, method: str, url: str, **kwar
             response = session.request(method, url, timeout=REQUEST_TIMEOUT, **kwargs)
             response.raise_for_status()
             return response
-        except requests.RequestException as exc:
+        except requests.exceptions.RequestException as exc:
             last_error = exc
             if attempt == MAX_ATTEMPTS:
                 break
@@ -105,7 +112,7 @@ def _warm_up_session(session: requests.Session) -> None:
     """
     try:
         session.get(HEADERS["Referer"], headers=HEADERS, timeout=REQUEST_TIMEOUT)
-    except requests.RequestException as exc:
+    except requests.exceptions.RequestException as exc:
         logger.warning("Gagal warm-up sesi ke halaman IDX (%s): %s", HEADERS["Referer"], exc)
 
 
@@ -210,7 +217,7 @@ def run(
     expected state for the current fiscal year.
     """
     owns_session = session is None
-    session = session or requests.Session()
+    session = session or requests.Session(impersonate="chrome")
     _warm_up_session(session)
     results: list[DownloadResult] = []
 
