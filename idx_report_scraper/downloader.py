@@ -195,16 +195,39 @@ def extract_pdf_attachments(data) -> Iterator[dict]:
     attachment carries the parent entry's NamaEmiten/KodeEmiten under
     _entity_name/_entity_code, since the API already gives us that for
     free - no need to open the PDF just to find out whose report it is.
+
+    A company that files a correction/restatement for a period it already
+    reported can show up as a second entry with the same File_Name - only
+    the one with the latest File_Modified is kept, so a corrected report
+    always wins over the one it superseded rather than whichever happened
+    to be listed first.
     """
     results = data if isinstance(data, list) else (data or {}).get("Results", []) or []
+    by_file_name: dict[str, dict] = {}
     for result in results:
         entity_name = result.get("NamaEmiten")
         entity_code = result.get("KodeEmiten")
         for attachment in result.get("Attachments", []) or []:
             file_name = attachment.get("File_Name", "") or ""
             file_path = attachment.get("File_Path", "") or ""
-            if file_name.lower().endswith(".pdf") or file_path.lower().endswith(".pdf"):
-                yield {**attachment, "_entity_name": entity_name, "_entity_code": entity_code}
+            if not (file_name.lower().endswith(".pdf") or file_path.lower().endswith(".pdf")):
+                continue
+            enriched = {**attachment, "_entity_name": entity_name, "_entity_code": entity_code}
+            # fall back to File_Path when File_Name is missing, so two
+            # attachments that both lack a name don't collide on "" and
+            # wrongly collapse into one.
+            key = file_name or file_path
+            existing = by_file_name.get(key)
+            if existing is None or _is_newer(enriched, existing):
+                by_file_name[key] = enriched
+    yield from by_file_name.values()
+
+
+def _is_newer(candidate: dict, existing: dict) -> bool:
+    # File_Modified is a fixed-width ISO-ish timestamp (e.g.
+    # "2026-04-30T16:51:25.623"), so a plain string comparison already
+    # sorts chronologically - no need to parse it.
+    return (candidate.get("File_Modified") or "") > (existing.get("File_Modified") or "")
 
 
 def download_pdf(

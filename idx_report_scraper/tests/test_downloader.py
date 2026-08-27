@@ -77,6 +77,54 @@ class ExtractPdfAttachmentsTests(unittest.TestCase):
             list(downloader.extract_pdf_attachments(SAMPLE_RESPONSE)),
         )
 
+    def test_keeps_only_latest_when_same_file_name_repeats(self):
+        # e.g. a company files a correction/restatement for a period it
+        # already reported - both entries share the same File_Name.
+        duplicated = [
+            {
+                "KodeEmiten": "AADI",
+                "NamaEmiten": "PT Adaro Andalan Indonesia Tbk",
+                "Attachments": [
+                    {
+                        "File_Name": "FinancialStatement-2026-I-AADI.pdf",
+                        "File_Path": "/Portals/0/original.pdf",
+                        "File_Modified": "2026-04-30T16:51:25.623",
+                    }
+                ],
+            },
+            {
+                "KodeEmiten": "AADI",
+                "NamaEmiten": "PT Adaro Andalan Indonesia Tbk",
+                "Attachments": [
+                    {
+                        "File_Name": "FinancialStatement-2026-I-AADI.pdf",
+                        "File_Path": "/Portals/0/revised.pdf",
+                        "File_Modified": "2026-05-15T09:00:00.000",
+                    }
+                ],
+            },
+        ]
+        attachments = list(downloader.extract_pdf_attachments(duplicated))
+        self.assertEqual(len(attachments), 1)
+        self.assertEqual(attachments[0]["File_Path"], "/Portals/0/revised.pdf")
+
+    def test_order_of_duplicates_does_not_matter(self):
+        newer_first = [
+            {
+                "Attachments": [
+                    {"File_Name": "x.pdf", "File_Path": "/new.pdf", "File_Modified": "2026-05-15T09:00:00.000"}
+                ]
+            },
+            {
+                "Attachments": [
+                    {"File_Name": "x.pdf", "File_Path": "/old.pdf", "File_Modified": "2026-04-30T16:51:25.623"}
+                ]
+            },
+        ]
+        attachments = list(downloader.extract_pdf_attachments(newer_first))
+        self.assertEqual(len(attachments), 1)
+        self.assertEqual(attachments[0]["File_Path"], "/new.pdf")
+
 
 def _http_error(status_code: int):
     resp = MagicMock()
