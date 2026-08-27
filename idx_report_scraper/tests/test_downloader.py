@@ -94,6 +94,19 @@ class GuessPdfAttachmentTests(unittest.TestCase):
         attachment = downloader.guess_pdf_attachment("AADI", 2026, "tw2")
         self.assertEqual(attachment["File_Name"], "FinancialStatement-2026-II-AADI.pdf")
 
+    def test_builds_expected_tw3_path(self):
+        attachment = downloader.guess_pdf_attachment("AMIN", 2025, "tw3")
+        self.assertEqual(attachment["File_Name"], "FinancialStatement-2025-III-AMIN.pdf")
+        self.assertIn("/Laporan Keuangan Tahun 2025/TW3/AMIN/", attachment["File_Path"])
+
+    def test_builds_expected_annual_path_using_audit_folder(self):
+        # Confirmed against a real IDX URL: the annual report's folder is
+        # "Audit", not "Tahunan" like the file suffix and every other
+        # period's folder name would suggest.
+        attachment = downloader.guess_pdf_attachment("AMIN", 2025, "tahunan")
+        self.assertEqual(attachment["File_Name"], "FinancialStatement-2025-Tahunan-AMIN.pdf")
+        self.assertIn("/Laporan Keuangan Tahun 2025/Audit/AMIN/", attachment["File_Path"])
+
 
 class RequestWithRetryTests(unittest.TestCase):
     def test_does_not_retry_on_4xx(self):

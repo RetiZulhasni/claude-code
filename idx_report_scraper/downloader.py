@@ -154,17 +154,17 @@ def fetch_report(
         ) from exc
 
 
-# Folder/filename convention observed directly on the site for TW1 reports
-# (both AMIN 2025 and AADI 2025/2026): .../Laporan Keuangan Tahun
-# {year}/{TWn}/{KODE}/FinancialStatement-{year}-{roman}-{KODE}.pdf. TW2/TW3
-# are assumed to follow the same "I"/"II"/"III" numbering; "tahunan" is an
-# unverified guess (IDX's annual reports commonly use "Tahunan" for both the
-# folder and the file suffix, but no real example has been observed here).
+# Folder/filename convention confirmed against real IDX URLs (AMIN 2025
+# TW1-TW3 and annual, AADI 2025/2026 TW1): .../Laporan Keuangan Tahun
+# {year}/{folder}/{KODE}/FinancialStatement-{year}-{suffix}-{KODE}.pdf.
+# The annual report's folder is "Audit" (not "Tahunan" like the file
+# suffix uses) - easy to miss since every other period's folder name
+# matches its suffix.
 _STATIC_DATA_PREFIX = (
     "/Portals/0/StaticData/ListedCompanies/Corporate_Actions/New_Info_JSX/"
     "Jenis_Informasi/01_Laporan_Keuangan/02_Soft_Copy_Laporan_Keuangan/"
 )
-_PERIOD_FOLDER = {"tw1": "TW1", "tw2": "TW2", "tw3": "TW3", "tahunan": "Tahunan"}
+_PERIOD_FOLDER = {"tw1": "TW1", "tw2": "TW2", "tw3": "TW3", "tahunan": "Audit"}
 _PERIOD_SUFFIX = {"tw1": "I", "tw2": "II", "tw3": "III", "tahunan": "Tahunan"}
 
 
