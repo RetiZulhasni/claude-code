@@ -63,11 +63,43 @@ python -m idx_report_scraper.cli --kode-emiten AADI --year 2026 --periode tw1 tw
 
 # Ubah folder tujuan
 python -m idx_report_scraper.cli --kode-emiten AADI --year 2026 --out-dir /path/ke/folder
+
+# Banyak emiten sekaligus (mis. semua perusahaan tercatat), dengan resume otomatis
+python -m idx_report_scraper.cli --tickers-file tickers.txt --year 2026
 ```
 
 Menambahkan perusahaan baru cukup dengan menambah entri di
 `KNOWN_COMPANIES` pada `companies.py`, atau langsung memakai `--kode-emiten`
 tanpa mengubah kode.
+
+## Mengunduh banyak emiten sekaligus (`--tickers-file`)
+
+`--tickers-file` memproses satu file berisi banyak kode ticker (satu per
+baris, atau kolom `kode`/`code`/`ticker` kalau filenya `.csv`) secara
+berurutan, dengan jeda `--delay` detik antar-emiten (default 1 detik, agar
+tidak membebani idx.co.id). Setiap emiten yang selesai — sukses maupun
+gagal — langsung dicatat ke `<out-dir>/progress.json`.
+
+**Resume otomatis:** kalau proses terhenti di tengah jalan (crash, error,
+koneksi putus, atau `Ctrl-C`), jalankan perintah yang **persis sama** lagi.
+Emiten yang sudah `"status": "done"` di `progress.json` otomatis dilewati,
+dan proses lanjut dari emiten yang belum selesai atau yang gagal
+sebelumnya. Pakai `--no-resume` untuk memaksa proses ulang semua emiten
+dari awal.
+
+```bash
+python -m idx_report_scraper.cli --tickers-file tickers.txt --year 2026 --delay 2
+# terhenti di tengah jalan? jalankan lagi persis sama - otomatis lanjut:
+python -m idx_report_scraper.cli --tickers-file tickers.txt --year 2026 --delay 2
+```
+
+**Mendapatkan daftar kode ticker semua emiten:** repo ini belum
+menyertakan cara otomatis untuk menarik daftar seluruh ~900+ perusahaan
+tercatat dari idx.co.id (endpoint-nya belum diverifikasi, berbeda dari
+endpoint `GetFinancialReport`). Untuk sekarang, siapkan `tickers.txt`
+secara manual, misalnya dari unduhan "Daftar Perusahaan Tercatat"
+(Excel/CSV) yang biasanya tersedia di halaman profil perusahaan tercatat
+IDX, atau dari sumber data pasar modal lain yang sudah Anda punya.
 
 ## Catatan penting
 
@@ -99,5 +131,6 @@ python -m unittest discover -s idx_report_scraper/tests -p "test_*.py" -v
 
 Test ini berjalan sepenuhnya offline (API dan parsing PDF di-mock) dan
 memverifikasi: resolusi nama perusahaan ke kode ticker, filter lampiran PDF,
-alur unduh + penulisan manifest, serta ekstraksi nama/kode entitas dari
-halaman sampul laporan (baik lewat tabel maupun fallback teks).
+alur unduh + penulisan manifest, ekstraksi nama/kode entitas dari halaman
+sampul laporan (baik lewat tabel maupun fallback teks), serta orkestrasi
+banyak-emiten (`bulk.py`) termasuk resume dari checkpoint.
