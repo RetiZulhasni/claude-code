@@ -43,8 +43,8 @@ from . import metadata
 
 logger = logging.getLogger("idx_report_scraper")
 
-BASE_URL = "https://idx.co.id/umbraco/Surface/ListedCompany/GetFinancialReport"
-DOWNLOAD_BASE_URL = "https://idx.co.id"
+BASE_URL = "https://www.idx.co.id/umbraco/Surface/ListedCompany/GetFinancialReport"
+DOWNLOAD_BASE_URL = "https://www.idx.co.id"
 VALID_PERIODS = ("tw1", "tw2", "tw3", "tahunan")
 DEFAULT_PERIODS = VALID_PERIODS
 
@@ -53,7 +53,7 @@ DEFAULT_PERIODS = VALID_PERIODS
 # headers a real browser adds on top of that for this specific AJAX call
 # need to be listed here.
 HEADERS = {
-    "Referer": "https://idx.co.id/id/perusahaan-tercatat/laporan-keuangan-dan-tahunan",
+    "Referer": "https://www.idx.co.id/id/perusahaan-tercatat/laporan-keuangan-dan-tahunan",
     "Accept": "application/json, text/plain, */*",
     "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
     "X-Requested-With": "XMLHttpRequest",
