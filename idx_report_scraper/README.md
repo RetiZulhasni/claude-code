@@ -7,21 +7,30 @@ via API internal yang dipakai halaman tersebut — bukan parsing HTML.
 ## Cara kerja (pipeline)
 
 1. `fetch_report()` — memanggil endpoint
-   `https://idx.co.id/umbraco/Surface/ListedCompany/GetFinancialReport`
+   `https://www.idx.co.id/umbraco/Surface/ListedCompany/GetFinancialReport`
    dengan parameter `kodeEmiten`, `year`, `periode` (`tw1`/`tw2`/`tw3`/`tahunan`),
    `reportType=rdf`. Endpoint dan struktur JSON ini bukan API resmi yang
-   didokumentasikan IDX — dikonfirmasi dari implementasi scraper publik yang
-   sudah berjalan, sehingga sewaktu-waktu bisa berubah tanpa pemberitahuan.
-2. `extract_pdf_attachments()` — dari `Results[].Attachments[]`, mengambil
-   hanya entri yang berekstensi `.pdf` (laporan lain seperti XBRL diabaikan).
+   didokumentasikan IDX, jadi sewaktu-waktu bisa berubah tanpa pemberitahuan
+   — kalau endpoint ini mengembalikan 404 (bukan hasil kosong untuk periode
+   yang memang belum terbit), `run()` otomatis jatuh ke
+   `guess_pdf_attachment()`: menebak URL PDF standar langsung berdasarkan
+   pola penamaan file IDX yang sudah diverifikasi manual
+   (`.../Laporan Keuangan Tahun <tahun>/<TWn>/<KODE>/FinancialStatement-<tahun>-<romawi>-<KODE>.pdf`).
+   Fallback ini best-effort: hanya menangkap satu nama file standar, jadi
+   varian PDF lain (mis. salinan berlabel nama perusahaan) yang cuma
+   tercantum di JSON API bisa terlewat.
+2. `extract_pdf_attachments()` — dari (bare array, bukan `{"Results": [...]}`)
+   respons API, mengambil hanya entri berekstensi `.pdf` (laporan lain
+   seperti XBRL/XLSX diabaikan) dan menyertakan `NamaEmiten`/`KodeEmiten`
+   dari level induknya sebagai `_entity_name`/`_entity_code`.
 3. `download_pdf()` — mengunduh tiap PDF dengan retry + exponential backoff,
    menghitung SHA-256, menyimpan ke
    `downloads/<KODE_EMITEN>/<TAHUN>/<PERIODE>/<nama_file>.pdf`.
-4. `metadata.extract_entity_metadata()` — begitu satu PDF selesai diunduh,
-   modul ini membaca file lokal yang sudah tersimpan (tanpa request ulang)
-   dan mengambil "Nama Entitas"/"Kode Entitas" dari halaman sampul laporan
-   — dicoba dulu sebagai tabel, baru fallback ke pencarian teks untuk
-   template PDF yang tidak menyajikannya sebagai tabel.
+4. `metadata.extract_entity_metadata()` — fallback kalau API tidak
+   menyertakan `NamaEmiten`/`KodeEmiten` (mis. lewat jalur tebakan URL):
+   membaca file PDF lokal yang sudah tersimpan (tanpa request ulang) dan
+   mengambil "Nama Entitas"/"Kode Entitas" dari halaman sampul laporan —
+   dicoba dulu sebagai tabel, baru fallback ke pencarian teks.
 5. `run()` — menjalankan langkah 1-4 untuk semua periode yang diminta, lalu
    menulis `downloads/<KODE_EMITEN>/<TAHUN>/manifest.json` berisi daftar file
    yang berhasil diunduh (nama, URL sumber, path lokal, hash, ukuran, waktu

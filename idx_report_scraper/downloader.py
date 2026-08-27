@@ -88,6 +88,12 @@ def _request_with_retry(session: requests.Session, method: str, url: str, **kwar
             return response
         except requests.exceptions.RequestException as exc:
             last_error = exc
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            if status is not None and 400 <= status < 500:
+                # a 4xx won't change on retry (wrong URL, no such report) -
+                # retrying it just burns time the caller may want to spend
+                # on a fallback instead.
+                raise
             if attempt == MAX_ATTEMPTS:
                 break
             wait = BACKOFF_SECONDS * (2 ** (attempt - 1))
@@ -146,6 +152,37 @@ def fetch_report(
             f"Respons IDX untuk {kode_emiten} {year}/{periode} bukan JSON valid: {exc}\n"
             f"Cuplikan respons: {response.text[:500]!r}"
         ) from exc
+
+
+# Folder/filename convention observed directly on the site for TW1 reports
+# (both AMIN 2025 and AADI 2025/2026): .../Laporan Keuangan Tahun
+# {year}/{TWn}/{KODE}/FinancialStatement-{year}-{roman}-{KODE}.pdf. TW2/TW3
+# are assumed to follow the same "I"/"II"/"III" numbering; "tahunan" is an
+# unverified guess (IDX's annual reports commonly use "Tahunan" for both the
+# folder and the file suffix, but no real example has been observed here).
+_STATIC_DATA_PREFIX = (
+    "/Portals/0/StaticData/ListedCompanies/Corporate_Actions/New_Info_JSX/"
+    "Jenis_Informasi/01_Laporan_Keuangan/02_Soft_Copy_Laporan_Keuangan/"
+)
+_PERIOD_FOLDER = {"tw1": "TW1", "tw2": "TW2", "tw3": "TW3", "tahunan": "Tahunan"}
+_PERIOD_SUFFIX = {"tw1": "I", "tw2": "II", "tw3": "III", "tahunan": "Tahunan"}
+
+
+def guess_pdf_attachment(kode_emiten: str, year: int, periode: str) -> dict:
+    """Predict the canonical FinancialStatement PDF path IDX uses, for use
+    when the GetFinancialReport AJAX endpoint can't be reached at all.
+
+    This is a best-effort fallback, not a replacement for the API: it only
+    covers the single standardized filename, while a report can also carry
+    extra PDF variants (e.g. a company-named copy) that only the API's JSON
+    lists. Whether the guessed URL actually exists is only known once
+    download_pdf() requests it.
+    """
+    folder = _PERIOD_FOLDER[periode]
+    suffix = _PERIOD_SUFFIX[periode]
+    file_name = f"FinancialStatement-{year}-{suffix}-{kode_emiten}.pdf"
+    file_path = f"{_STATIC_DATA_PREFIX}/Laporan Keuangan Tahun {year}/{folder}/{kode_emiten}/{file_name}"
+    return {"File_Name": file_name, "File_Path": file_path}
 
 
 def extract_pdf_attachments(data) -> Iterator[dict]:
@@ -226,6 +263,28 @@ def download_pdf(
     )
 
 
+def _is_404(exc: Exception) -> bool:
+    return getattr(getattr(exc, "response", None), "status_code", None) == 404
+
+
+def _list_attachments(kode_emiten: str, year: int, periode: str, session: requests.Session) -> list[dict]:
+    """fetch_report() + extract_pdf_attachments(), falling back to a
+    guessed direct PDF URL if the AJAX endpoint itself 404s (as opposed to
+    returning an empty result for a period with no report yet)."""
+    try:
+        data = fetch_report(kode_emiten, year, periode, session)
+        return list(extract_pdf_attachments(data))
+    except requests.exceptions.HTTPError as exc:
+        if not _is_404(exc):
+            raise
+        logger.warning(
+            "Endpoint API 404 untuk periode %s; memakai pola URL unduhan langsung sebagai fallback "
+            "(hanya menemukan file standar - varian nama lain bisa terlewat).",
+            periode,
+        )
+        return [guess_pdf_attachment(kode_emiten, year, periode)]
+
+
 def run(
     kode_emiten: str,
     year: int,
@@ -247,8 +306,7 @@ def run(
     try:
         for periode in periods:
             logger.info("Mengambil laporan %s tahun %s periode %s ...", kode_emiten, year, periode)
-            data = fetch_report(kode_emiten, year, periode, session)
-            attachments = list(extract_pdf_attachments(data))
+            attachments = _list_attachments(kode_emiten, year, periode, session)
 
             if not attachments:
                 logger.info("Tidak ada PDF untuk periode %s (belum terbit atau tidak tersedia).", periode)
@@ -257,7 +315,15 @@ def run(
             dest_dir = out_dir / kode_emiten / str(year) / periode
             for attachment in attachments:
                 logger.info("Mengunduh %s", attachment.get("File_Name"))
-                result = download_pdf(attachment, dest_dir, session, kode_emiten, year, periode)
+                try:
+                    result = download_pdf(attachment, dest_dir, session, kode_emiten, year, periode)
+                except requests.exceptions.HTTPError as exc:
+                    if not _is_404(exc):
+                        raise
+                    logger.info(
+                        "%s tidak ditemukan (404), dilewati.", attachment.get("File_Name")
+                    )
+                    continue
                 results.append(result)
     finally:
         if owns_session:

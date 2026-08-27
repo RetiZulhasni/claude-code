@@ -78,6 +78,95 @@ class ExtractPdfAttachmentsTests(unittest.TestCase):
         )
 
 
+def _http_error(status_code: int):
+    resp = MagicMock()
+    resp.status_code = status_code
+    return downloader.requests.exceptions.HTTPError(f"HTTP Error {status_code}", 0, resp)
+
+
+class GuessPdfAttachmentTests(unittest.TestCase):
+    def test_builds_expected_tw1_path(self):
+        attachment = downloader.guess_pdf_attachment("AADI", 2026, "tw1")
+        self.assertEqual(attachment["File_Name"], "FinancialStatement-2026-I-AADI.pdf")
+        self.assertIn("/Laporan Keuangan Tahun 2026/TW1/AADI/", attachment["File_Path"])
+
+    def test_builds_expected_tw2_path(self):
+        attachment = downloader.guess_pdf_attachment("AADI", 2026, "tw2")
+        self.assertEqual(attachment["File_Name"], "FinancialStatement-2026-II-AADI.pdf")
+
+
+class RequestWithRetryTests(unittest.TestCase):
+    def test_does_not_retry_on_4xx(self):
+        session = MagicMock()
+        resp = MagicMock()
+        resp.raise_for_status.side_effect = _http_error(404)
+        session.request.return_value = resp
+
+        with self.assertRaises(downloader.requests.exceptions.HTTPError):
+            downloader._request_with_retry(session, "GET", "https://example.com/x")
+
+        self.assertEqual(session.request.call_count, 1)
+
+    def test_retries_on_non_4xx_error(self):
+        session = MagicMock()
+        resp_fail = MagicMock()
+        resp_fail.raise_for_status.side_effect = _http_error(503)
+        resp_ok = MagicMock()
+        resp_ok.raise_for_status.return_value = None
+        session.request.side_effect = [resp_fail, resp_ok]
+
+        with patch.object(downloader.time, "sleep", return_value=None):
+            result = downloader._request_with_retry(session, "GET", "https://example.com/x")
+
+        self.assertIs(result, resp_ok)
+        self.assertEqual(session.request.call_count, 2)
+
+
+class ApiFallbackTests(unittest.TestCase):
+    def test_falls_back_to_guessed_url_when_api_404s(self):
+        session = MagicMock()
+
+        def fake_request(method, url, **kwargs):
+            resp = MagicMock()
+            if url == downloader.BASE_URL:
+                resp.raise_for_status.side_effect = _http_error(404)
+            else:
+                resp.raise_for_status.return_value = None
+                resp.iter_content.return_value = [b"%PDF-1.4 fake content"]
+            return resp
+
+        session.request.side_effect = fake_request
+
+        with TemporaryDirectory() as tmp:
+            out_dir = Path(tmp)
+            results = downloader.run(
+                kode_emiten="AADI", year=2026, periods=["tw1"], out_dir=out_dir, session=session
+            )
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].file_name, "FinancialStatement-2026-I-AADI.pdf")
+        api_calls = [c for c in session.request.call_args_list if c.args[1] == downloader.BASE_URL]
+        self.assertEqual(len(api_calls), 1)
+
+    def test_guessed_url_404_is_skipped_gracefully(self):
+        session = MagicMock()
+
+        def fake_request(method, url, **kwargs):
+            resp = MagicMock()
+            resp.raise_for_status.side_effect = _http_error(404)
+            return resp
+
+        session.request.side_effect = fake_request
+
+        with TemporaryDirectory() as tmp:
+            out_dir = Path(tmp)
+            results = downloader.run(
+                kode_emiten="AADI", year=2026, periods=["tw1"], out_dir=out_dir, session=session
+            )
+
+        self.assertEqual(results, [])
+
+
 class RunOrchestrationTests(unittest.TestCase):
     def test_run_downloads_pdfs_and_writes_manifest(self):
         session = MagicMock()
