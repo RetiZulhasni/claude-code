@@ -46,6 +46,8 @@ HEADERS = {
     ),
     "Referer": "https://idx.co.id/id/perusahaan-tercatat/laporan-keuangan-dan-tahunan",
     "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
+    "X-Requested-With": "XMLHttpRequest",
 }
 
 REQUEST_TIMEOUT = 30
@@ -91,6 +93,20 @@ def _request_with_retry(session: requests.Session, method: str, url: str, **kwar
             time.sleep(wait)
     assert last_error is not None
     raise last_error
+
+
+def _warm_up_session(session: requests.Session) -> None:
+    """Visit the report listing page once so idx.co.id issues its session
+    cookie before we call the AJAX endpoint directly - hitting the API
+    cold (no referring-page cookie) is what a real browser never does, and
+    is a likely reason IDX's side rejects it with a 403. Best-effort: if
+    this fails we still attempt the API call, since not every deployment
+    requires it.
+    """
+    try:
+        session.get(HEADERS["Referer"], headers=HEADERS, timeout=REQUEST_TIMEOUT)
+    except requests.RequestException as exc:
+        logger.warning("Gagal warm-up sesi ke halaman IDX (%s): %s", HEADERS["Referer"], exc)
 
 
 def fetch_report(
@@ -195,6 +211,7 @@ def run(
     """
     owns_session = session is None
     session = session or requests.Session()
+    _warm_up_session(session)
     results: list[DownloadResult] = []
 
     try:
