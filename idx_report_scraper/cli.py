@@ -63,6 +63,15 @@ def build_parser() -> argparse.ArgumentParser:
             f"(default: {bulk.DEFAULT_DELAY_SECONDS})"
         ),
     )
+    parser.add_argument(
+        "--direct",
+        action="store_true",
+        help=(
+            "Lewati endpoint API GetFinancialReport sepenuhnya dan langsung pakai pola URL PDF "
+            "statis yang sudah diverifikasi (berguna kalau endpoint API sedang tidak stabil - "
+            "404/403 - padahal URL file-nya sendiri terverifikasi benar)"
+        ),
+    )
     parser.add_argument("-v", "--verbose", action="store_true", help="Tampilkan log debug")
     return parser
 
@@ -80,6 +89,7 @@ def _run_single(args, log: logging.Logger) -> int:
             year=args.year,
             periods=args.periode,
             out_dir=args.out_dir,
+            use_api=not args.direct,
         )
     except requests.exceptions.RequestException as exc:
         log.error("Gagal menghubungi idx.co.id: %s", exc)
@@ -108,6 +118,7 @@ def _run_bulk(args, log: logging.Logger) -> int:
         out_dir=args.out_dir,
         resume=not args.no_resume,
         delay_seconds=args.delay,
+        use_api=not args.direct,
     )
 
     failed = [k for k, v in checkpoint.items() if v.get("status") == "failed"]

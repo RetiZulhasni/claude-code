@@ -66,11 +66,26 @@ python -m idx_report_scraper.cli --kode-emiten AADI --year 2026 --out-dir /path/
 
 # Banyak emiten sekaligus (mis. semua perusahaan tercatat), dengan resume otomatis
 python -m idx_report_scraper.cli --tickers-file tickers.txt --year 2026
+
+# Lewati endpoint API yang tidak stabil, langsung pakai pola URL PDF yang sudah diverifikasi
+python -m idx_report_scraper.cli --kode-emiten AADI --year 2026 --direct
 ```
 
 Menambahkan perusahaan baru cukup dengan menambah entri di
 `KNOWN_COMPANIES` pada `companies.py`, atau langsung memakai `--kode-emiten`
 tanpa mengubah kode.
+
+### `--direct`: lewati endpoint API sepenuhnya
+
+Endpoint `GetFinancialReport` kadang membalas 404, kadang 403 (kemungkinan
+rate-limit/proteksi Cloudflare), padahal pola URL PDF statis yang
+ditebaknya (`guess_pdf_attachment()`) sudah diverifikasi cocok
+byte-per-byte untuk TW1/TW2/TW3/Tahunan. `--direct` melewati panggilan API
+itu sama sekali (termasuk warm-up sesi) dan langsung memakai pola URL
+tersebut untuk semua periode yang diminta - lebih stabil untuk run
+berskala besar, dengan trade-off yang sama seperti fallback-nya: hanya
+menemukan satu nama file PDF standar, varian lain (mis. salinan berlabel
+nama perusahaan) yang cuma tercantum di JSON API akan terlewat.
 
 ## Mengunduh banyak emiten sekaligus (`--tickers-file`)
 

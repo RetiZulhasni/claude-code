@@ -43,7 +43,7 @@ def _fake_download_result(kode_emiten: str) -> downloader.DownloadResult:
 
 class RunAllTests(unittest.TestCase):
     def test_marks_each_ticker_done_and_writes_checkpoint(self):
-        def fake_run(kode_emiten, year, periods, out_dir, session=None):
+        def fake_run(kode_emiten, year, periods, out_dir, session=None, use_api=True):
             return [_fake_download_result(kode_emiten)]
 
         with TemporaryDirectory() as tmp:
@@ -59,7 +59,7 @@ class RunAllTests(unittest.TestCase):
     def test_resume_skips_tickers_already_done(self):
         calls = []
 
-        def fake_run(kode_emiten, year, periods, out_dir, session=None):
+        def fake_run(kode_emiten, year, periods, out_dir, session=None, use_api=True):
             calls.append(kode_emiten)
             return [_fake_download_result(kode_emiten)]
 
@@ -80,7 +80,7 @@ class RunAllTests(unittest.TestCase):
         self.assertEqual(checkpoint["BBCA"]["status"], "done")
 
     def test_failed_ticker_is_recorded_and_retried_next_run(self):
-        def failing_run(kode_emiten, year, periods, out_dir, session=None):
+        def failing_run(kode_emiten, year, periods, out_dir, session=None, use_api=True):
             if kode_emiten == "BBCA":
                 raise RuntimeError("boom")
             return [_fake_download_result(kode_emiten)]
@@ -98,7 +98,7 @@ class RunAllTests(unittest.TestCase):
             # a second run (still resume=True) should retry only the failed one
             calls = []
 
-            def fake_run(kode_emiten, year, periods, out_dir, session=None):
+            def fake_run(kode_emiten, year, periods, out_dir, session=None, use_api=True):
                 calls.append(kode_emiten)
                 return [_fake_download_result(kode_emiten)]
 
@@ -111,7 +111,7 @@ class RunAllTests(unittest.TestCase):
     def test_no_resume_reprocesses_everything(self):
         calls = []
 
-        def fake_run(kode_emiten, year, periods, out_dir, session=None):
+        def fake_run(kode_emiten, year, periods, out_dir, session=None, use_api=True):
             calls.append(kode_emiten)
             return [_fake_download_result(kode_emiten)]
 

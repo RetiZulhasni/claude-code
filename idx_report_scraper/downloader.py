@@ -290,10 +290,22 @@ def _is_404(exc: Exception) -> bool:
     return getattr(getattr(exc, "response", None), "status_code", None) == 404
 
 
-def _list_attachments(kode_emiten: str, year: int, periode: str, session: requests.Session) -> list[dict]:
+def _list_attachments(
+    kode_emiten: str, year: int, periode: str, session: requests.Session, use_api: bool = True
+) -> list[dict]:
     """fetch_report() + extract_pdf_attachments(), falling back to a
     guessed direct PDF URL if the AJAX endpoint itself 404s (as opposed to
-    returning an empty result for a period with no report yet)."""
+    returning an empty result for a period with no report yet).
+
+    With use_api=False the AJAX endpoint is skipped entirely and every
+    period goes straight to the guessed URL - useful when that endpoint is
+    being unreliable on its own (404s one moment, a flat-out 403 the next)
+    while the static file path it's meant to discover has been directly
+    verified to be correct.
+    """
+    if not use_api:
+        return [guess_pdf_attachment(kode_emiten, year, periode)]
+
     try:
         data = fetch_report(kode_emiten, year, periode, session)
         return list(extract_pdf_attachments(data))
@@ -314,22 +326,29 @@ def run(
     periods: Iterable[str] = DEFAULT_PERIODS,
     out_dir: Path = Path("downloads"),
     session: requests.Session | None = None,
+    use_api: bool = True,
 ) -> list[DownloadResult]:
     """Fetch + download every PDF financial report for kode_emiten/year.
 
     Periods with no published report yet (e.g. a quarter that hasn't closed)
     are logged and skipped rather than treated as errors, since that is the
     expected state for the current fiscal year.
+
+    use_api=False skips the GetFinancialReport AJAX call entirely and goes
+    straight to the guessed static PDF URL for every period - use this when
+    that endpoint itself is being unreliable (404s one moment, 403s the
+    next) rather than just reporting an empty period.
     """
     owns_session = session is None
     session = session or requests.Session(impersonate="chrome")
-    _warm_up_session(session)
+    if use_api:
+        _warm_up_session(session)
     results: list[DownloadResult] = []
 
     try:
         for periode in periods:
             logger.info("Mengambil laporan %s tahun %s periode %s ...", kode_emiten, year, periode)
-            attachments = _list_attachments(kode_emiten, year, periode, session)
+            attachments = _list_attachments(kode_emiten, year, periode, session, use_api=use_api)
 
             if not attachments:
                 logger.info("Tidak ada PDF untuk periode %s (belum terbit atau tidak tersedia).", periode)

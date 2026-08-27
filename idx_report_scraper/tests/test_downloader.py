@@ -227,6 +227,34 @@ class ApiFallbackTests(unittest.TestCase):
 
         self.assertEqual(results, [])
 
+    def test_use_api_false_skips_api_and_warmup_entirely(self):
+        session = MagicMock()
+
+        def fake_request(method, url, **kwargs):
+            if url == downloader.BASE_URL:
+                raise AssertionError("API endpoint should not be called when use_api=False")
+            resp = MagicMock()
+            resp.raise_for_status.return_value = None
+            resp.iter_content.return_value = [b"%PDF-1.4 fake content"]
+            return resp
+
+        session.request.side_effect = fake_request
+        session.get.side_effect = AssertionError("warm-up should not run when use_api=False")
+
+        with TemporaryDirectory() as tmp:
+            out_dir = Path(tmp)
+            results = downloader.run(
+                kode_emiten="AADI",
+                year=2026,
+                periods=["tw1"],
+                out_dir=out_dir,
+                session=session,
+                use_api=False,
+            )
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].file_name, "FinancialStatement-2026-I-AADI.pdf")
+
 
 class RunOrchestrationTests(unittest.TestCase):
     def test_run_downloads_pdfs_and_writes_manifest(self):

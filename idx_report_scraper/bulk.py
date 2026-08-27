@@ -78,6 +78,7 @@ def run_all(
     out_dir: Path = Path("downloads"),
     resume: bool = True,
     delay_seconds: float = DEFAULT_DELAY_SECONDS,
+    use_api: bool = True,
 ) -> dict:
     """Run downloader.run() for every ticker, recording each one's outcome
     in <out_dir>/progress.json immediately after it finishes.
@@ -106,7 +107,12 @@ def run_all(
             logger.info("[%d/%d] Memproses %s ...", i, total, kode)
             try:
                 results = downloader.run(
-                    kode_emiten=kode, year=year, periods=periods, out_dir=out_dir, session=session
+                    kode_emiten=kode,
+                    year=year,
+                    periods=periods,
+                    out_dir=out_dir,
+                    session=session,
+                    use_api=use_api,
                 )
                 checkpoint[kode] = {"status": "done", "files": len(results)}
                 done_count += 1
