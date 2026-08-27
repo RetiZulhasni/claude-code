@@ -35,6 +35,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Iterator
+from urllib.parse import quote
 
 from curl_cffi import requests
 
@@ -43,6 +44,7 @@ from . import metadata
 logger = logging.getLogger("idx_report_scraper")
 
 BASE_URL = "https://idx.co.id/umbraco/Surface/ListedCompany/GetFinancialReport"
+DOWNLOAD_BASE_URL = "https://idx.co.id"
 VALID_PERIODS = ("tw1", "tw2", "tw3", "tahunan")
 DEFAULT_PERIODS = VALID_PERIODS
 
@@ -146,14 +148,26 @@ def fetch_report(
         ) from exc
 
 
-def extract_pdf_attachments(data: dict) -> Iterator[dict]:
-    """Yield only the PDF attachments out of a fetch_report() payload."""
-    for result in data.get("Results", []) or []:
+def extract_pdf_attachments(data) -> Iterator[dict]:
+    """Yield only the PDF attachments out of a fetch_report() payload.
+
+    The API's real response is a bare JSON array of report entries, not the
+    {"Results": [...]} envelope IDX's older static-scraper references
+    assumed - but that wrapped shape is accepted too in case a different
+    report type or a future API revision goes back to it. Each yielded
+    attachment carries the parent entry's NamaEmiten/KodeEmiten under
+    _entity_name/_entity_code, since the API already gives us that for
+    free - no need to open the PDF just to find out whose report it is.
+    """
+    results = data if isinstance(data, list) else (data or {}).get("Results", []) or []
+    for result in results:
+        entity_name = result.get("NamaEmiten")
+        entity_code = result.get("KodeEmiten")
         for attachment in result.get("Attachments", []) or []:
             file_name = attachment.get("File_Name", "") or ""
             file_path = attachment.get("File_Path", "") or ""
             if file_name.lower().endswith(".pdf") or file_path.lower().endswith(".pdf"):
-                yield attachment
+                yield {**attachment, "_entity_name": entity_name, "_entity_code": entity_code}
 
 
 def download_pdf(
@@ -164,7 +178,12 @@ def download_pdf(
     year: int,
     periode: str,
 ) -> DownloadResult:
-    url = attachment["File_Path"]
+    file_path = attachment["File_Path"]
+    # File_Path is a site-relative path (e.g. "/Portals/0/...pdf"), not a
+    # full URL - quote() only escapes the raw spaces/special characters IDX
+    # embeds in it (folder names like "Laporan Keuangan Tahun 2026"),
+    # leaving the "/" separators (and its own doubled "//") intact.
+    url = file_path if file_path.startswith("http") else DOWNLOAD_BASE_URL + quote(file_path, safe="/")
     file_name = attachment.get("File_Name") or url.rsplit("/", 1)[-1]
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest_path = dest_dir / file_name
@@ -180,13 +199,17 @@ def download_pdf(
             sha256.update(chunk)
             size += len(chunk)
 
-    entity_name = entity_code = None
-    try:
-        entity_name, entity_code = metadata.extract_entity_metadata(dest_path)
-    except Exception as exc:
-        # PDF templates vary across reports/years; a cover page that
-        # doesn't parse shouldn't fail the download itself.
-        logger.warning("Gagal mengekstrak metadata entitas dari %s: %s", dest_path, exc)
+    entity_name = attachment.get("_entity_name")
+    entity_code = attachment.get("_entity_code")
+    if not (entity_name and entity_code):
+        try:
+            pdf_name, pdf_code = metadata.extract_entity_metadata(dest_path)
+            entity_name = entity_name or pdf_name
+            entity_code = entity_code or pdf_code
+        except Exception as exc:
+            # PDF templates vary across reports/years; a cover page that
+            # doesn't parse shouldn't fail the download itself.
+            logger.warning("Gagal mengekstrak metadata entitas dari %s: %s", dest_path, exc)
 
     return DownloadResult(
         kode_emiten=kode_emiten,
