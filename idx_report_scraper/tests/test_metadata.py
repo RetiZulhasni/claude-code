@@ -48,6 +48,25 @@ class ExtractEntityMetadataTests(unittest.TestCase):
         self.assertEqual(company, "PT Adaro Andalan Indonesia Tbk")
         self.assertEqual(code, "AADI")
 
+    def test_extracts_nama_emiten_label_variant(self):
+        # The label actually used on AADI's own TW1 2026 cover page
+        # ("Nomor Surat / Nama Emiten / Kode Emiten / Perihal"), not
+        # "Nama Entitas" - both must be recognized.
+        page = _FakePage(
+            tables=[
+                [
+                    ["Nomor Surat", "AADI/BEI/V/2026"],
+                    ["Nama Emiten", "PT Adaro Andalan Indonesia Tbk"],
+                    ["Kode Emiten", "AADI"],
+                    ["Perihal", "Penyampaian Laporan Keuangan Interim"],
+                ]
+            ]
+        )
+        with patch.object(metadata.pdfplumber, "open", return_value=_FakePdf([page])):
+            company, code = metadata.extract_entity_metadata("fake.pdf")
+        self.assertEqual(company, "PT Adaro Andalan Indonesia Tbk")
+        self.assertEqual(code, "AADI")
+
     def test_falls_back_to_text_when_no_table_match(self):
         page = _FakePage(
             tables=[],

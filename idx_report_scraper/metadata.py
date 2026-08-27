@@ -1,11 +1,14 @@
 """Extract issuer identity (entity name/code) from a financial-report PDF.
 
 IDX's report cover page carries these as a labeled row - in a table on most
-reports, but as plain text on some - in Indonesian ("Nama Entitas"/"Kode
-Entitas") or English ("Entity Name"/"Entity Code"). Trying the table first
-and only falling back to a text scan is what makes this work across the
-different PDF templates IDX has used over the years, while staying cheap
-for the common case (a handful of pages, not the whole document).
+reports, but as plain text on some - under a few different labels
+depending on the template: "Nama Entitas"/"Kode Entitas", "Nama Emiten"/
+"Kode Emiten" (confirmed on AADI's own TW1 2026 report - a real
+"Nomor Surat / Nama Emiten / Kode Emiten / Perihal" cover table), or the
+English "Entity Name"/"Entity Code". Trying the table first and only
+falling back to a text scan is what makes this work across the different
+PDF templates IDX has used over the years, while staying cheap for the
+common case (a handful of pages, not the whole document).
 """
 
 from __future__ import annotations
@@ -15,8 +18,8 @@ import re
 import pdfplumber
 
 _NORMALIZE_WHITESPACE = re.compile(r"\s+")
-_LABELS_COMPANY = {"nama entitas", "entity name"}
-_LABELS_CODE = {"kode entitas", "entity code"}
+_LABELS_COMPANY = {"nama entitas", "nama emiten", "entity name"}
+_LABELS_CODE = {"kode entitas", "kode emiten", "entity code"}
 _MAX_TABLE_PAGES = 2
 _MAX_TEXT_PAGES = 3
 
@@ -51,8 +54,8 @@ def _pick_after(text: str, *patterns: str) -> str | None:
 
 def _from_text(pdf) -> tuple[str | None, str | None]:
     text = "\n".join((p.extract_text() or "") for p in pdf.pages[:_MAX_TEXT_PAGES])
-    company = _pick_after(text, r"nama\s+entitas", r"entity\s+name")
-    code = _pick_after(text, r"kode\s+entitas", r"entity\s+code")
+    company = _pick_after(text, r"nama\s+entitas", r"nama\s+emiten", r"entity\s+name")
+    code = _pick_after(text, r"kode\s+entitas", r"kode\s+emiten", r"entity\s+code")
     return company, code
 
 
