@@ -116,6 +116,45 @@ secara manual, misalnya dari unduhan "Daftar Perusahaan Tercatat"
 (Excel/CSV) yang biasanya tersedia di halaman profil perusahaan tercatat
 IDX, atau dari sumber data pasar modal lain yang sudah Anda punya.
 
+## Analisis otomatis: "Profil & Keuangan" + "Kalkulator Kesehatan" (`--build-intelligence`)
+
+Setelah PDF sudah terunduh (via `--company`/`--kode-emiten`/`--tickers-file`),
+`--build-intelligence` membaca ulang PDF-PDF itu (tanpa mengunduh apa pun
+lagi) dan menyusun satu workbook Excel:
+
+```bash
+python -m idx_report_scraper.cli --build-intelligence --year 2026 \
+  --intelligence-output Account_Intelligence.xlsx
+```
+
+Ini otomatis memproses **semua emiten** yang punya `manifest.json` di bawah
+`<out-dir>/<year>/` — tidak perlu sebut ulang `--tickers-file`. Workbook
+hasilnya punya 3 sheet:
+
+1. **Profil & Keuangan** — satu baris per emiten: sektor/subsektor/industri,
+   Pendapatan, Laba Bersih (+ pertumbuhan YoY sebagai rumus), Beban
+   Penjualan, Beban Umum & Administrasi, Kas & Setara Kas, Total Aset.
+   Diambil dari `financials.py`, yang mem-parsing badan laporan XBRL
+   (bukan cuma halaman sampul seperti `metadata.py`) — bagian Laporan Laba
+   Rugi & Laporan Posisi Keuangan.
+2. **Matriks Kesehatan** — tabel referensi 16 kombinasi (Revenue x Profit x
+   Karyawan x Cash → kategori kesehatan & artinya untuk tim commercial).
+3. **Kalkulator Kesehatan** — satu kolom per emiten, dengan rumus
+   `INDEX`/`MATCH` ke Matriks Kesehatan (persis pola yang dipakai template
+   "Account Intelligence" sebagai rujukan). **Karyawan (jumlah pegawai)
+   sengaja dikosongkan** — field ini tidak ada di laporan keuangan XBRL,
+   jadi diisi manual di sel biru kalau datanya tersedia dari sumber lain;
+   dikosongkan berarti hasil kategori untuk emiten itu juga kosong (bukan
+   error), bukan salah tebak.
+
+**Batasan penting:** modul ini hanya menangani bagian yang deterministik —
+angka dari laporan keuangan. Bagian kualitatif seperti kalender momen
+(HUT, RUPST, launching produk), nama direksi, narasi tema komunikasi, dan
+pemetaan jasa/estimasi revenue **tidak** bisa diekstrak dari PDF laporan
+keuangan — itu butuh riset berita/internet per perusahaan (lihat cara kami
+mengerjakannya secara manual untuk AALI & AADI sebagai contoh), bukan
+sesuatu yang bisa di-generate otomatis untuk ratusan emiten sekaligus.
+
 ## Catatan penting
 
 - **idx.co.id ada di belakang Cloudflare**, yang menolak request dari
@@ -147,5 +186,7 @@ python -m unittest discover -s idx_report_scraper/tests -p "test_*.py" -v
 Test ini berjalan sepenuhnya offline (API dan parsing PDF di-mock) dan
 memverifikasi: resolusi nama perusahaan ke kode ticker, filter lampiran PDF,
 alur unduh + penulisan manifest, ekstraksi nama/kode entitas dari halaman
-sampul laporan (baik lewat tabel maupun fallback teks), serta orkestrasi
-banyak-emiten (`bulk.py`) termasuk resume dari checkpoint.
+sampul laporan (baik lewat tabel maupun fallback teks), orkestrasi
+banyak-emiten (`bulk.py`) termasuk resume dari checkpoint, serta ekstraksi
+angka Laporan Laba Rugi/Posisi Keuangan (`financials.py`) — termasuk kasus
+label yang saling bertabrakan (mis. "Jumlah aset lancar" vs "Jumlah aset").

@@ -9,14 +9,14 @@ from pathlib import Path
 
 from curl_cffi import requests
 
-from . import bulk, companies, downloader
+from . import bulk, companies, downloader, intelligence
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Unduh laporan keuangan (PDF) emiten IDX secara otomatis.",
     )
-    company_group = parser.add_mutually_exclusive_group(required=True)
+    company_group = parser.add_mutually_exclusive_group(required=False)
     company_group.add_argument(
         "--company",
         help='Nama perusahaan, mis. "PT Adaro Andalan Indonesia Tbk" (harus dikenal di companies.py)',
@@ -71,6 +71,22 @@ def build_parser() -> argparse.ArgumentParser:
             "statis yang sudah diverifikasi (berguna kalau endpoint API sedang tidak stabil - "
             "404/403 - padahal URL file-nya sendiri terverifikasi benar)"
         ),
+    )
+    parser.add_argument(
+        "--build-intelligence",
+        action="store_true",
+        help=(
+            "Jangan unduh apa pun - baca PDF yang SUDAH terunduh di <out-dir>/<year>/ dan susun "
+            "workbook 'Profil & Keuangan' + 'Kalkulator Kesehatan' otomatis dari situ (--company/"
+            "--kode-emiten/--tickers-file tidak dipakai di mode ini; semua emiten yang punya "
+            "manifest.json di bawah <out-dir>/<year>/ ikut diproses)."
+        ),
+    )
+    parser.add_argument(
+        "--intelligence-output",
+        type=Path,
+        default=Path("Account_Intelligence.xlsx"),
+        help="Untuk --build-intelligence: path file .xlsx hasil (default: ./Account_Intelligence.xlsx)",
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="Tampilkan log debug")
     return parser
@@ -133,14 +149,46 @@ def _run_bulk(args, log: logging.Logger) -> int:
     return 0
 
 
+def _run_build_intelligence(args, log: logging.Logger) -> int:
+    tickers = intelligence.discover_downloaded_tickers(args.out_dir, args.year)
+    if not tickers:
+        log.error(
+            "Tidak ada manifest.json ditemukan di %s. Jalankan unduhan (--company/--kode-emiten/"
+            "--tickers-file) untuk tahun %s dulu sebelum --build-intelligence.",
+            Path(args.out_dir) / str(args.year), args.year,
+        )
+        return 2
+
+    log.info("Ditemukan %d emiten dengan hasil unduhan untuk tahun %s.", len(tickers), args.year)
+    rows = intelligence.collect_financial_profiles(args.out_dir, args.year, tickers)
+    if not rows:
+        log.error("Tidak ada data keuangan yang berhasil diekstrak dari PDF yang ada.")
+        return 2
+
+    intelligence.build_workbook(rows, args.intelligence_output)
+    print(
+        f"Berhasil menyusun workbook untuk {len(rows)}/{len(tickers)} emiten -> {args.intelligence_output}"
+    )
+    if len(rows) < len(tickers):
+        print(f"{len(tickers) - len(rows)} emiten dilewati (PDF tidak ada/gagal diparsing) - cek log di atas.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
     )
 
     log = logging.getLogger("idx_report_scraper")
+
+    if args.build_intelligence:
+        return _run_build_intelligence(args, log)
+
+    if not (args.company or args.kode_emiten or args.tickers_file):
+        parser.error("salah satu dari --company, --kode-emiten, --tickers-file, atau --build-intelligence wajib diisi")
 
     if args.tickers_file:
         return _run_bulk(args, log)
