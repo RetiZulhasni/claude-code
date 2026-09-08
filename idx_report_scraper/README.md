@@ -133,8 +133,21 @@ hasilnya punya 3 sheet:
 
 1. **Profil & Keuangan** — satu baris per emiten: sektor/subsektor/industri,
    Pendapatan, Laba Bersih (+ pertumbuhan YoY sebagai rumus), Beban
-   Penjualan, Beban Umum & Administrasi, Kas & Setara Kas, Total Aset.
-   Diambil dari `financials.py`, yang mem-parsing badan laporan XBRL
+   Penjualan, Beban Umum & Administrasi, Kas & Setara Kas, Total Aset, Aset
+   Lancar, Liabilitas Jangka Pendek, Jumlah Liabilitas, Jumlah Ekuitas, dan
+   4 rasio kesehatan keuangan berikut (semuanya rumus Excel aktif, bukan
+   angka mati — otomatis mengikuti kalau sel sumbernya diedit):
+   - **Current Ratio** = Aset Lancar ÷ Liabilitas Jangka Pendek — likuiditas
+     jangka pendek, idealnya ≥ 1.
+   - **DER** (Debt to Equity Ratio) = Jumlah Liabilitas ÷ Jumlah Ekuitas —
+     beban utang relatif terhadap modal sendiri; makin tinggi makin
+     berisiko kena tekanan kas (termasuk pemotongan budget non-esensial
+     seperti marketing/PR).
+   - **Margin Laba Bersih** = Laba Bersih ÷ Pendapatan.
+   - **ROE** (Return on Equity) = Laba Bersih ÷ Jumlah Ekuitas — efisiensi
+     memutar modal.
+
+   Semua diambil dari `financials.py`, yang mem-parsing badan laporan XBRL
    (bukan cuma halaman sampul seperti `metadata.py`) — bagian Laporan Laba
    Rugi & Laporan Posisi Keuangan.
 2. **Matriks Kesehatan** — tabel referensi 16 kombinasi (Revenue x Profit x

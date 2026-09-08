@@ -50,6 +50,16 @@ BALANCE_SHEET_PAGE = _page(
     "Jumlah aset lancar 8,433,638 7,118,202 Total current assets",
     "Jumlah aset tidak 20,359,587 21,728,041 Total non-current",
     "Jumlah aset 28,793,225 28,846,243 Total assets",
+    # "jangka pendek/panjang" wraps away, leaving three lines whose
+    # Indonesian half is identically "Jumlah liabilitas <numbers>" - only
+    # the trailing English half (current / non-current / liabilities)
+    # distinguishes them, exactly as real AALI PDFs render this section.
+    "Jumlah liabilitas 3,237,653 3,882,141 Total current",
+    "Jumlah liabilitas 2,353,510 2,398,096 Total non-current",
+    "Jumlah liabilitas 5,591,163 6,280,237 Total liabilities",
+    "Jumlah ekuitas 22,641,918 22,016,045 Total equity",
+    "Jumlah ekuitas 23,202,062 22,566,006 Total equity",
+    "Jumlah liabilitas dan 28,793,225 28,846,243 Total liabilities and equity",
 )
 
 INCOME_STATEMENT_PAGE = _page(
@@ -85,7 +95,17 @@ class ExtractFinancialProfileTests(unittest.TestCase):
     def test_balance_sheet_total_assets_not_current_assets(self):
         profile = self._extract([BALANCE_SHEET_PAGE])
         self.assertEqual(profile.kas_setara_kas, 3236012.0)
+        self.assertEqual(profile.jumlah_aset_lancar, 8433638.0)
         self.assertEqual(profile.jumlah_aset, 28793225.0)
+
+    def test_balance_sheet_liabilities_and_equity_not_confused_with_subtotals(self):
+        profile = self._extract([BALANCE_SHEET_PAGE])
+        # Not the current (3,237,653) or non-current (2,353,510) subtotal,
+        # and not the liabilities+equity grand total (28,793,225) either.
+        self.assertEqual(profile.jumlah_liabilitas_jangka_pendek, 3237653.0)
+        self.assertEqual(profile.jumlah_liabilitas, 5591163.0)
+        # Not the parent-only equity figure (22,641,918) that precedes it.
+        self.assertEqual(profile.jumlah_ekuitas, 23202062.0)
 
     def test_income_statement_headline_figures(self):
         profile = self._extract([INCOME_STATEMENT_PAGE])

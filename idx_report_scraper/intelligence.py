@@ -39,6 +39,7 @@ THIN = Side(style="thin", color="D9D9D9")
 BORDER = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
 NUM_FMT = "#,##0;(#,##0);-"
 PCT_FMT = "0.0%;(0.0%);-"
+RATIO_FMT = "0.00x;(0.00x);-"
 WRAP = Alignment(wrap_text=True, vertical="top")
 
 # The 16-combination health matrix, copied verbatim from the reference
@@ -175,10 +176,17 @@ def _write_profil_keuangan_sheet(wb: Workbook, rows: list[tuple[str, str, financ
         "Laba Bersih (Rp juta)", "Laba Bersih Periode Lalu (Rp juta)", "Pertumbuhan Laba (%)",
         "Beban Penjualan (Rp juta)", "Beban Umum & Administrasi (Rp juta)",
         "Kas & Setara Kas (Rp juta)", "Total Aset (Rp juta)",
+        "Aset Lancar (Rp juta)", "Liabilitas Jangka Pendek (Rp juta)",
+        "Jumlah Liabilitas (Rp juta)", "Jumlah Ekuitas (Rp juta)",
+        "Current Ratio", "DER (Debt to Equity)", "Margin Laba Bersih (%)", "ROE (%)",
     ]
     _title_block(ws, "Profil & Keuangan (otomatis dari PDF laporan keuangan IDX)", (
         "Diekstrak otomatis oleh idx_report_scraper.intelligence dari PDF yang sudah diunduh. "
-        "'Periode Sumber' menunjukkan periode mana yang datanya dipakai (diprioritaskan: tahunan > tw3 > tw2 > tw1)."
+        "'Periode Sumber' menunjukkan periode mana yang datanya dipakai (diprioritaskan: tahunan > tw3 > tw2 > tw1). "
+        "Current Ratio = Aset Lancar / Liabilitas Jangka Pendek (likuiditas jangka pendek, idealnya >= 1). "
+        "DER = Jumlah Liabilitas / Jumlah Ekuitas (beban utang relatif terhadap modal sendiri, makin tinggi makin berisiko). "
+        "Margin Laba Bersih = Laba Bersih / Pendapatan. ROE = Laba Bersih / Jumlah Ekuitas (efisiensi memutar modal). "
+        "Keempatnya rumus Excel aktif, otomatis mengikuti kalau angka sumbernya diedit."
     ), len(headers))
     row = 4
     for i, h in enumerate(headers, start=1):
@@ -192,19 +200,31 @@ def _write_profil_keuangan_sheet(wb: Workbook, rows: list[tuple[str, str, financ
             p.pendapatan, p.pendapatan_prior, None,
             p.laba_bersih, p.laba_bersih_prior, None,
             p.beban_penjualan, p.beban_administrasi, p.kas_setara_kas, p.jumlah_aset,
+            p.jumlah_aset_lancar, p.jumlah_liabilitas_jangka_pendek,
+            p.jumlah_liabilitas, p.jumlah_ekuitas, None, None, None, None,
         ]
         for i, v in enumerate(values, start=1):
             ws.cell(row=row, column=i, value=v)
         ws.cell(row=row, column=10, value=f'=IFERROR((H{row}-I{row})/I{row},"-")')
         ws.cell(row=row, column=13, value=f'=IFERROR((K{row}-L{row})/L{row},"-")')
-        for c in (8, 9, 11, 12, 14, 15, 16, 17):
+        # Current Ratio = Aset Lancar (R, col 18) / Liabilitas Jangka Pendek (S, col 19)
+        ws.cell(row=row, column=22, value=f'=IFERROR(R{row}/S{row},"-")')
+        # DER = Jumlah Liabilitas (T, col 20) / Jumlah Ekuitas (U, col 21)
+        ws.cell(row=row, column=23, value=f'=IFERROR(T{row}/U{row},"-")')
+        # Margin Laba Bersih = Laba Bersih (K, col 11) / Pendapatan (H, col 8)
+        ws.cell(row=row, column=24, value=f'=IFERROR(K{row}/H{row},"-")')
+        # ROE = Laba Bersih (K, col 11) / Jumlah Ekuitas (U, col 21)
+        ws.cell(row=row, column=25, value=f'=IFERROR(K{row}/U{row},"-")')
+        for c in (8, 9, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21):
             ws.cell(row=row, column=c).number_format = NUM_FMT
-        for c in (10, 13):
+        for c in (10, 13, 24, 25):
             ws.cell(row=row, column=c).number_format = PCT_FMT
+        for c in (22, 23):
+            ws.cell(row=row, column=c).number_format = RATIO_FMT
         _style_data_row(ws, row, len(headers), wrap_cols=(2,))
         row += 1
 
-    widths = [10, 32, 14, 22, 22, 24, 16, 18, 20, 16, 16, 20, 14, 18, 20, 18, 16]
+    widths = [10, 32, 14, 22, 22, 24, 16, 18, 20, 16, 16, 20, 14, 18, 20, 18, 16, 16, 20, 18, 16, 12, 14, 16, 12]
     for i, w in enumerate(widths, start=1):
         ws.column_dimensions[get_column_letter(i)].width = w
     ws.freeze_panes = f"A{first_data_row}"

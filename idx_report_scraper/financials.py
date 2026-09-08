@@ -12,7 +12,11 @@ regex search is reliable without needing real table structure.
 
 Field coverage is intentionally narrow: just what a headline "is this
 company worth pitching" screen needs (revenue, gross/net profit, selling &
-G&A expense, cash, total assets, sector). Employee count is deliberately
+G&A expense, cash, total assets, liabilities, equity, sector) plus the raw
+balance-sheet figures (current assets, current liabilities, total
+liabilities, total equity) needed to compute standard health ratios -
+Current Ratio, Debt-to-Equity Ratio, net margin, ROE - as real spreadsheet
+formulas downstream (see intelligence.py). Employee count is deliberately
 not attempted here - IDX's financial-statement XBRL doesn't reliably carry
 it (it's an Annual Report / company-profile fact, not a financial-statement
 line item), so any workbook built from this data leaves headcount as a
@@ -46,7 +50,11 @@ def _line_numbers(line: str) -> list[float]:
 
 
 def _find_line_values(
-    text: str, *label_prefixes: str, prefer: str = "first"
+    text: str,
+    *label_prefixes: str,
+    prefer: str = "first",
+    require: str | None = None,
+    exclude: tuple[str, ...] = (),
 ) -> tuple[float | None, float | None]:
     """Lines starting with any of label_prefixes (case-insensitive) -> the
     first (or, with prefer="last", the last) matching line's first two
@@ -58,12 +66,24 @@ def _find_line_values(
     dilanjutkan" (from continuing operations) both start with "jumlah laba
     (rugi)" too, but the bare "Jumlah laba (rugi)" total line - the one
     actually wanted - always comes last in the statement's P&L walk.
+
+    require/exclude filter by substring elsewhere on the same line, needed
+    when the Indonesian label itself is identical across several lines and
+    only the English half (which sits after the numbers, on the same
+    physical line) tells them apart - e.g. total current liabilities, total
+    non-current liabilities and total liabilities all render as a bare
+    "Jumlah liabilitas <numbers> Total current/non-current/liabilities"
+    line once the "jangka pendek/panjang" part of the label wraps away.
     """
     match: tuple[float | None, float | None] | None = None
     for line in text.split("\n"):
         lowered = line.strip().lower()
         for label in label_prefixes:
             if lowered.startswith(label):
+                if require is not None and require not in lowered:
+                    break
+                if exclude and any(x in lowered for x in exclude):
+                    break
                 numbers = _line_numbers(line)
                 if len(numbers) >= 2:
                     found = (numbers[0], numbers[1])
@@ -140,7 +160,11 @@ class FinancialProfile:
     laba_bersih: float | None = None
     laba_bersih_prior: float | None = None
     kas_setara_kas: float | None = None
+    jumlah_aset_lancar: float | None = None
     jumlah_aset: float | None = None
+    jumlah_liabilitas_jangka_pendek: float | None = None
+    jumlah_liabilitas: float | None = None
+    jumlah_ekuitas: float | None = None
 
 
 def _fill_general_info(profile: FinancialProfile, text: str) -> None:
@@ -156,13 +180,44 @@ def _fill_general_info(profile: FinancialProfile, text: str) -> None:
 
 def _fill_balance_sheet(profile: FinancialProfile, text: str) -> None:
     kas, _ = _find_line_values(text, "kas dan setara kas")
+    aset_lancar, _ = _find_line_values(text, "jumlah aset lancar")
     # "jumlah aset" also prefixes "Jumlah aset lancar" (current assets) and
     # "Jumlah aset tidak [lancar]" (non-current assets), both of which
     # appear earlier in the statement than the bare "Jumlah aset" grand
     # total this is actually after.
     aset, _ = _find_line_values(text, "jumlah aset", prefer="last")
+    # The "jangka pendek"/"jangka panjang" part of the label wraps away in
+    # IDX's renderer, so total current liabilities, total non-current
+    # liabilities and total liabilities all appear as a bare "Jumlah
+    # liabilitas <numbers> ..." line - only the English half (after the
+    # numbers) tells them apart: "Total current", "Total non-current" and
+    # "Total liabilities" respectively (see also "Total liabilities and
+    # equity", excluded below by its Indonesian "dan" continuation).
+    liabilitas_lancar, _ = _find_line_values(
+        text, "jumlah liabilitas", require="current", exclude=("non-current",)
+    )
+    liabilitas, _ = _find_line_values(
+        text, "jumlah liabilitas", exclude=("current", "liabilitas dan")
+    )
+    # Same wrapping behavior: "Jumlah ekuitas" appears once for equity
+    # attributable to the parent, then again (last) for the grand total
+    # including non-controlling interests - the one actually wanted.
+    ekuitas, _ = _find_line_values(text, "jumlah ekuitas", prefer="last")
+
     profile.kas_setara_kas = profile.kas_setara_kas if profile.kas_setara_kas is not None else kas
+    profile.jumlah_aset_lancar = (
+        profile.jumlah_aset_lancar if profile.jumlah_aset_lancar is not None else aset_lancar
+    )
     profile.jumlah_aset = profile.jumlah_aset if profile.jumlah_aset is not None else aset
+    profile.jumlah_liabilitas_jangka_pendek = (
+        profile.jumlah_liabilitas_jangka_pendek
+        if profile.jumlah_liabilitas_jangka_pendek is not None
+        else liabilitas_lancar
+    )
+    profile.jumlah_liabilitas = (
+        profile.jumlah_liabilitas if profile.jumlah_liabilitas is not None else liabilitas
+    )
+    profile.jumlah_ekuitas = profile.jumlah_ekuitas if profile.jumlah_ekuitas is not None else ekuitas
 
 
 def _fill_income_statement(profile: FinancialProfile, text: str) -> None:
