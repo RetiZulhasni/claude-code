@@ -153,11 +153,14 @@ def collect_financial_profiles(
     are skipped with a log message rather than aborting the batch.
     """
     results = []
-    for kode in kode_emiten_list:
+    kode_emiten_list = list(kode_emiten_list)
+    total = len(kode_emiten_list)
+    for i, kode in enumerate(kode_emiten_list, start=1):
         periode, pdf_path = pick_best_pdf(out_dir, year, kode)
         if pdf_path is None:
             logger.info("Tidak ada PDF terunduh untuk %s tahun %s, dilewati.", kode, year)
             continue
+        logger.info("[%d/%d] Mengekstrak %s (%s) ...", i, total, kode, periode)
         try:
             profile = financials.extract_financial_profile(pdf_path)
         except Exception as exc:
