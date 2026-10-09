@@ -203,3 +203,18 @@ sampul laporan (baik lewat tabel maupun fallback teks), orkestrasi
 banyak-emiten (`bulk.py`) termasuk resume dari checkpoint, serta ekstraksi
 angka Laporan Laba Rugi/Posisi Keuangan (`financials.py`) — termasuk kasus
 label yang saling bertabrakan (mis. "Jumlah aset lancar" vs "Jumlah aset").
+
+## Validasi ekstraksi lintas sektor
+
+`financials.py` baru divalidasi penuh pada AALI. Untuk mengecek apakah
+parser bekerja di emiten/sektor lain (terutama bank & asuransi yang
+template XBRL-nya berbeda), unduh sampel lalu jalankan validasi:
+
+```bash
+python -m idx_report_scraper.cli --tickers-file idx_report_scraper/sample_tickers.txt --year 2025 --direct
+python -m idx_report_scraper.validation --year 2025 --tickers-file idx_report_scraper/sample_tickers.txt
+```
+
+Output: ringkasan cakupan field + hasil cek konsistensi (aset = liabilitas
++ ekuitas, dll.) per sektor di terminal, dan detail per emiten di
+`validasi_ekstraksi.csv`.

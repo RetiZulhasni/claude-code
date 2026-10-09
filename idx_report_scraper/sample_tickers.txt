@@ -1,0 +1,52 @@
+# Sampel validasi parser lintas sektor (lihat validation.py).
+# Sengaja menyertakan bank, asuransi, dan multifinance karena template
+# XBRL OJK untuk sektor keuangan berbeda dari template industri umum
+# yang dipakai untuk memvalidasi financials.py (AALI).
+
+# Keuangan - bank
+BBCA
+BMRI
+BBRI
+BBNI
+BRIS
+BBTN
+ARTO
+# Keuangan - asuransi & multifinance
+TUGU
+AMAG
+ADMF
+# Konsumen primer
+UNVR
+ICBP
+MYOR
+SIDO
+HMSP
+AMRT
+# Konsumen non-primer
+ERAA
+MAPI
+ACES
+# Kesehatan
+KLBF
+SILO
+# Perindustrian
+ASII
+UNTR
+# Energi
+AADI
+PTBA
+# Barang baku
+ANTM
+INCO
+KRAS
+# Infrastruktur
+TLKM
+ISAT
+JSMR
+# Properti
+SMRA
+# Teknologi
+GOTO
+BELI
+# Transportasi
+GIAA
